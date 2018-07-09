@@ -450,6 +450,7 @@ public class DAGImpl implements org.apache.tez.dag.app.dag.DAG,
   private boolean isUber = false;
   private DAGTerminationCause terminationCause;
   private Credentials credentials;
+  private boolean fairness = false;
 
   @VisibleForTesting
   long initTime;
@@ -526,7 +527,7 @@ public class DAGImpl implements org.apache.tez.dag.app.dag.DAG,
     this.taskCommunicatorManagerInterface = taskCommunicatorManagerInterface;
     this.taskHeartbeatHandler = thh;
     this.eventHandler = eventHandler;
-    ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+    ReadWriteLock readWriteLock = new ReentrantReadWriteLock(fairness);
     this.readLock = readWriteLock.readLock();
     this.writeLock = readWriteLock.writeLock();
 
@@ -689,7 +690,6 @@ public class DAGImpl implements org.apache.tez.dag.app.dag.DAG,
   public TezCounters getAllCounters() {
 
     readLock.lock();
-
     try {
       DAGState state = getInternalState();
       if (state == DAGState.ERROR || state == DAGState.FAILED
@@ -713,7 +713,6 @@ public class DAGImpl implements org.apache.tez.dag.app.dag.DAG,
   public TezCounters getCachedCounters() {
 
     readLock.lock();
-
     try {
       // FIXME a better lightweight approach for counters is needed
       if (fullCounters == null && cachedCounters != null
@@ -1159,9 +1158,14 @@ public class DAGImpl implements org.apache.tez.dag.app.dag.DAG,
           + event.getType() + " while in state " + getInternalState()
           + ". Event: " + event);
     }
+    long startLockTime = System.nanoTime();
     try {
       writeLock.lock();
       DAGState oldState = getInternalState();
+      long endLockTime = System.nanoTime();
+      LOG.info("fairness is set to: " + fairness);
+      LOG.info("Lock acquired for: " + (endLockTime - startLockTime));
+
       try {
          getStateMachine().doTransition(event.getType(), event);
       } catch (InvalidStateTransitonException e) {
