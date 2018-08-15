@@ -32,6 +32,7 @@ import java.util.zip.InflaterInputStream;
 import com.google.common.base.Preconditions;
 import com.google.protobuf.ByteString;
 
+import org.apache.tez.dag.api.TezConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -158,11 +159,13 @@ public class TezUtils {
       }
       if (conf != null) {
         JSONObject confJson = new JSONObject();
-        Iterator<Entry<String, String>> iter = conf.iterator();
+        Configuration redactedConf = new Configuration(conf);
+        TezConfiguration.redact(redactedConf);
+        Iterator<Entry<String, String>> iter = redactedConf.iterator();
         while (iter.hasNext()) {
           Entry<String, String> entry = iter.next();
           String key = entry.getKey();
-          String val = conf.get(entry.getKey());
+          String val = redactedConf.get(entry.getKey());
           if(val != null) {
             confJson.put(key, val);
           } else {

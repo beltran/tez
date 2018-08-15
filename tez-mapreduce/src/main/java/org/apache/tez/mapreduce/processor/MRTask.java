@@ -31,6 +31,7 @@ import javax.crypto.SecretKey;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
+import org.apache.tez.dag.api.TezConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
@@ -170,7 +171,9 @@ public abstract class MRTask extends AbstractLogicalIOProcessor {
     jobConf.set(MRJobConfig.VERTEX_NAME, processorContext.getTaskVertexName());
 
     if (LOG.isDebugEnabled() && userPayload != null) {
-      Iterator<Entry<String, String>> iter = jobConf.iterator();
+      JobConf redactedConf = new JobConf(jobConf);
+      TezConfiguration.redact(redactedConf);
+      Iterator<Entry<String, String>> iter = redactedConf.iterator();
       String taskIdStr = taskAttemptId.getTaskID().toString();
       while (iter.hasNext()) {
         Entry<String, String> confEntry = iter.next();

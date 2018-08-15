@@ -152,6 +152,7 @@ public class UnorderedPartitionedKVOutput extends AbstractLogicalOutput {
     confKeys.add(TezConfiguration.TEZ_AM_SHUFFLE_AUXILIARY_SERVICE_ID);
     confKeys.add(
         TezRuntimeConfiguration.TEZ_RUNTIME_UNORDERED_PARTITIONED_KVWRITER_BUFFER_MERGE_PERCENT);
+    confKeys.add(TezConfiguration.TEZ_REDACTED_PROPERTIES);
   }
 
   // TODO Maybe add helper methods to extract keys

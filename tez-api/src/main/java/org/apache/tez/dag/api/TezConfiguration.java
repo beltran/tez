@@ -1743,6 +1743,35 @@ public class TezConfiguration extends Configuration {
     }
   }
 
+  /**
+   * Comma separated list of properties that will be redacted when they
+   * are logged, shown in ui or displayed in some form.
+   */
+  @Unstable
+  @ConfigurationProperty
+  public static final String TEZ_REDACTED_PROPERTIES = TEZ_PREFIX
+      + "dag.redacted-properties";
+  /**
+   * Default value for TEZ_REDACTED_PROPERTIES.
+   */
+  public static final String TEZ_RUNTIME_REDACTED_PROPERTIES_DEFAULT = "";
+  /**
+   * Default replacement value when redacting.
+   */
+  public static final String REDACTION_REPLACEMENT_VAL = "*********(redacted)";
+
+  /**
+   * Override the values of the hidden fields of the conf
+   * arguments with keys in the hidden list of this conf.
+   * @param conf conf to override.
+   */
+  public static void redact(final Configuration conf) {
+    for (String prop : conf.getTrimmedStringCollection(
+        TEZ_REDACTED_PROPERTIES)) {
+      conf.set(prop, REDACTION_REPLACEMENT_VAL);
+    }
+  }
+
   @VisibleForTesting
   static Set<String> getPropertySet() {
     return PropertyScope.keySet();

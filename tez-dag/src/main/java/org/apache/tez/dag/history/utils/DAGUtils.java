@@ -42,6 +42,7 @@ import org.apache.tez.common.counters.TezCounters;
 import org.apache.tez.dag.api.DagTypeConverters;
 import org.apache.tez.dag.api.EdgeManagerPluginDescriptor;
 import org.apache.tez.dag.api.EdgeProperty;
+import org.apache.tez.dag.api.TezConfiguration;
 import org.apache.tez.dag.api.TezUncheckedException;
 import org.apache.tez.dag.api.records.DAGProtos;
 import org.apache.tez.dag.api.records.DAGProtos.DAGPlan;
@@ -505,7 +506,9 @@ public class DAGUtils {
 
   public static Map<String, String> convertConfigurationToATSMap(Configuration conf) {
     // Copy configuration to avoid CME since iterator is not thread safe until HADOOP-13500
-    Iterator<Entry<String, String>> iter = new Configuration(conf).iterator();
+    Configuration redactedConf = new Configuration(conf);
+    TezConfiguration.redact(redactedConf);
+    Iterator<Entry<String, String>> iter = redactedConf.iterator();
     Map<String, String> atsConf = new TreeMap<String, String>();
     while (iter.hasNext()) {
       Entry<String, String> entry = iter.next();

@@ -410,6 +410,7 @@ public class OrderedGroupedKVInput extends AbstractLogicalInput {
     confKeys.add(TezRuntimeConfiguration.TEZ_RUNTIME_CLEANUP_FILES_ON_INTERRUPT);
     confKeys.add(Constants.TEZ_RUNTIME_TASK_MEMORY);
     confKeys.add(TezConfiguration.TEZ_AM_SHUFFLE_AUXILIARY_SERVICE_ID);
+    confKeys.add(TezConfiguration.TEZ_REDACTED_PROPERTIES);
   }
 
   // TODO Maybe add helper methods to extract keys

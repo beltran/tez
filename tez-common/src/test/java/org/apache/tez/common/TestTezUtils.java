@@ -199,6 +199,21 @@ public class TestTezUtils {
   }
 
   @Test (timeout=2000)
+  public void testConvertToHistoryTextRedacts() throws JSONException {
+    Configuration conf = getConf();
+    conf.set(TezConfiguration.TEZ_LIB_URIS, "/lib/uri/path");
+    conf.set(TezConfiguration.TEZ_LIB_URIS_CLASSPATH, "/lib/uri/classpath");
+    conf.set(TezConfiguration.TEZ_REDACTED_PROPERTIES, TezConfiguration.TEZ_LIB_URIS + "," + TezConfiguration.TEZ_LIB_URIS_CLASSPATH);
+
+    String confToJson = TezUtils.convertToHistoryText(conf);
+    JSONObject jsonObject = new JSONObject(confToJson);
+    JSONObject confObject = jsonObject.getJSONObject(ATSConstants.CONFIG);
+
+    assertEquals(confObject.getString(TezConfiguration.TEZ_LIB_URIS), TezConfiguration.REDACTION_REPLACEMENT_VAL);
+    assertEquals(confObject.getString(TezConfiguration.TEZ_LIB_URIS_CLASSPATH), TezConfiguration.REDACTION_REPLACEMENT_VAL);
+  }
+
+  @Test (timeout=2000)
   public void testConvertToHistoryTextWithReplaceVars() throws JSONException {
     Configuration conf = getConf();
     conf.set("user", "user1");

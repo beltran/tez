@@ -18,6 +18,7 @@
 
 package org.apache.tez.dag.api;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -51,6 +52,18 @@ public class TestTezConfiguration {
     Configuration tezConf5 = new Configuration(true);
     Assert.assertNull(tezConf5.get(TezConfiguration.TEZ_LIB_URIS));
   }
+
+  @Test(timeout = 5000)
+  public void testRedact() {
+    TezConfiguration tezConf = new TezConfiguration();
+    tezConf.set(TezConfiguration.TEZ_LIB_URIS, "/lib/uri/path");
+    tezConf.set(TezConfiguration.TEZ_LIB_URIS_CLASSPATH, "/lib/uri/classpath");
+    tezConf.set(TezConfiguration.TEZ_REDACTED_PROPERTIES, TezConfiguration.TEZ_LIB_URIS + "," + TezConfiguration.TEZ_LIB_URIS_CLASSPATH);
+    TezConfiguration.redact(tezConf);
+    assertEquals(tezConf.get(TezConfiguration.TEZ_LIB_URIS), TezConfiguration.REDACTION_REPLACEMENT_VAL);
+    assertEquals(tezConf.get(TezConfiguration.TEZ_LIB_URIS_CLASSPATH), TezConfiguration.REDACTION_REPLACEMENT_VAL);
+  }
+
 
   @Test(timeout = 5000)
   public void testKeySet() throws IllegalAccessException {
