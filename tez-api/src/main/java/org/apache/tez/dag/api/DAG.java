@@ -24,15 +24,18 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.Stack;
+import java.util.TreeSet;
 
 import org.apache.commons.collections4.BidiMap;
 import org.apache.commons.collections4.bidimap.DualLinkedHashBidiMap;
@@ -535,12 +538,15 @@ public class DAG {
     int index; //for Tarjan's algorithm
     int lowlink; //for Tarjan's algorithm
     boolean onstack; //for Tarjan's algorithm
-
+    int depth; //for critical path reordering
+    int numInputVertices; //for critical path reordering
 
     private AnnotatedVertex(Vertex v) {
       this.v = v;
       index = -1;
       lowlink = -1;
+      depth = 0;
+      numInputVertices = 0;
     }
   }
 
@@ -569,7 +575,7 @@ public class DAG {
   }
 
   @VisibleForTesting
-  Deque<String> verify(boolean restricted) throws IllegalStateException {
+  Deque<Vertex> verify(boolean restricted) throws IllegalStateException {
     if (vertices.isEmpty()) {
       throw new IllegalStateException("Invalid dag containing 0 vertices");
     }
@@ -672,7 +678,10 @@ public class DAG {
     // When additional inputs are supported, this can be chceked easily (and early)
     // within the addInput / addOutput call itself.
 
-    Deque<String> topologicalVertexStack = detectCycles(edgeMap, vertexMap);
+    Deque<Vertex> topologicalVertexStack = detectCycles(edgeMap, vertexMap);
+
+    Deque<Vertex> critPathVertexStack = reorderForCriticalPath(topologicalVertexStack,
+        vertexMap, inboundVertexMap, outboundVertexMap);
 
     checkAndInferOneToOneParallelism();
 
@@ -691,12 +700,10 @@ public class DAG {
       }
     }
 
-    // check for conflicts between dag level local resource and vertex level local resource
-
-
-    return topologicalVertexStack;
+    return critPathVertexStack;
   }
 
+  // check for conflicts between dag level local resource and vertex level local resource
   @VisibleForTesting
   void verifyLocalResources(Configuration tezConf) {
     for (Vertex v : vertices.values()) {
@@ -759,16 +766,16 @@ public class DAG {
 
   // Adaptation of Tarjan's algorithm for connected components.
   // http://en.wikipedia.org/wiki/Tarjan%27s_strongly_connected_components_algorithm
-  private Deque<String> detectCycles(Map<Vertex, List<Edge>> edgeMap,
+  private Deque<Vertex> detectCycles(Map<Vertex, List<Edge>> edgeMap,
       Map<String, AnnotatedVertex> vertexMap)
     throws IllegalStateException {
-    Deque<String> topologicalVertexStack = new LinkedList<String>();
-    Integer nextIndex = 0; // boxed integer so it is passed by reference.
+    Deque<Vertex> topologicalVertexStack = new LinkedList<>();
+    int nextIndex = 0;
     Stack<AnnotatedVertex> stack = new Stack<DAG.AnnotatedVertex>();
     for (AnnotatedVertex av : vertexMap.values()) {
       if (av.index == -1) {
         assert stack.empty();
-        strongConnect(av, vertexMap, edgeMap, stack, nextIndex, topologicalVertexStack);
+        nextIndex = strongConnect(av, vertexMap, edgeMap, stack, nextIndex, topologicalVertexStack);
       }
     }
     return topologicalVertexStack;
@@ -776,13 +783,13 @@ public class DAG {
 
   // part of Tarjan's algorithm for connected components.
   // http://en.wikipedia.org/wiki/Tarjan%27s_strongly_connected_components_algorithm
-  private void strongConnect(
+  private int strongConnect(
       AnnotatedVertex av,
       Map<String, AnnotatedVertex> vertexMap,
       Map<Vertex, List<Edge>> edgeMap,
       Stack<AnnotatedVertex> stack,
-      Integer nextIndex,
-      Deque<String> topologicalVertexStack) throws IllegalStateException {
+      int nextIndex,
+      Deque<Vertex> topologicalVertexStack) throws IllegalStateException {
     av.index = nextIndex;
     av.lowlink = nextIndex;
     nextIndex++;
@@ -794,7 +801,7 @@ public class DAG {
       for (Edge e : edgeMap.get(av.v)) {
         AnnotatedVertex outVertex = vertexMap.get(e.getOutputVertex().getName());
         if (outVertex.index == -1) {
-          strongConnect(outVertex, vertexMap, edgeMap, stack, nextIndex, topologicalVertexStack);
+          nextIndex = strongConnect(outVertex, vertexMap, edgeMap, stack, nextIndex, topologicalVertexStack);
           av.lowlink = Math.min(av.lowlink, outVertex.lowlink);
         } else if (outVertex.onstack) {
           // strongly connected component detected, but we will wait till later so that the full cycle can be displayed.
@@ -828,8 +835,85 @@ public class DAG {
           }
         }
       }
-      topologicalVertexStack.push(av.v.getName());
+      topologicalVertexStack.push(av.v);
     }
+    return nextIndex;
+  }
+
+  /**
+   * A comparator for critical path ordering of vertices.
+   * Vertices are ordered by the computed depth in the graph with least depth first.
+   * For vertices that are at the same depth the one with fewer inputs comes first.
+   * @param o1 The first vertex to compare
+   * @param o2 The second vertex to compare
+   * @return a negative integer, zero, or positive integer as the first vertex
+   *         is less than, equal to, or greater than the second.
+   */
+  private static int criticalPathCompare(AnnotatedVertex o1, AnnotatedVertex o2) {
+    if (o1.depth < o2.depth) {
+      return -1;
+    }
+    if (o1.depth == o2.depth) {
+      int inputCompare = Integer.compare(o1.numInputVertices, o2.numInputVertices);
+      if (inputCompare != 0) {
+        return inputCompare;
+      }
+      return Integer.compare(o1.index, o2.index);
+    }
+    return 1;
+  }
+
+  // Reorder the vertices so the critical path vertices start first.
+  private Deque<Vertex> reorderForCriticalPath(Deque<Vertex> topologicalVertexStack,
+      Map<String, AnnotatedVertex> vertexMap, Map<Vertex, Set<String>> inboundVertexMap,
+      Map<Vertex, Set<String>> outboundVertexMap) {
+    // Walk the vertices in topological order computing the depth of each vertex.
+    // The depth of a vertex is the maximum depth of all parent vertices + 1.
+    for (Vertex v : topologicalVertexStack) {
+      AnnotatedVertex av = vertexMap.get(v.getName());
+      Set<String> inboundVerts = inboundVertexMap.get(v);
+      if (inboundVerts != null) {
+        av.numInputVertices = inboundVerts.size();
+        int maxParentDepth = -1;
+        for (String parentName : inboundVerts) {
+          AnnotatedVertex annotatedParent = vertexMap.get(parentName);
+          maxParentDepth = Math.max(maxParentDepth, annotatedParent.depth);
+        }
+        av.depth = maxParentDepth + 1;
+      }
+    }
+
+    Set<AnnotatedVertex> reorderedSet = new TreeSet<>(new Comparator<AnnotatedVertex>() {
+      @Override
+      public int compare(AnnotatedVertex o1, AnnotatedVertex o2) {
+        return criticalPathCompare(o1, o2);
+      }
+    });
+
+    // Walk the vertices in reverse topological order to propagate max child depth information
+    // back into the parent. This will increase the depth of a vertex if a child has a longer
+    // path back to a root vertex through another parent.
+    Iterator<Vertex> iter = topologicalVertexStack.descendingIterator();
+    while (iter.hasNext()) {
+      Vertex v = iter.next();
+      AnnotatedVertex av = vertexMap.get(v.getName());
+      Set<String> outboundVerts = outboundVertexMap.get(v);
+      if (outboundVerts != null) {
+        int maxChildDepth = av.depth + 1;
+        for (String childName : outboundVerts) {
+          AnnotatedVertex annotatedChild = vertexMap.get(childName);
+          maxChildDepth = Math.max(maxChildDepth, annotatedChild.depth);
+        }
+        av.depth = maxChildDepth - 1;
+      }
+      reorderedSet.add(av);
+    }
+
+    Deque<Vertex> reorderedVertexStack = new LinkedList<>();
+    for (AnnotatedVertex av : reorderedSet) {
+      reorderedVertexStack.add(av.v);
+    }
+    return reorderedVertexStack;
   }
 
   // create protobuf message describing DAG
@@ -847,7 +931,7 @@ public class DAG {
       Map<String, LocalResource> tezJarResources, LocalResource binaryConfig,
       boolean tezLrsAsArchive, ServicePluginsDescriptor servicePluginsDescriptor,
       JavaOptsChecker javaOptsChecker) {
-    Deque<String> topologicalVertexStack = verify(true);
+    Deque<Vertex> critPathVertexStack = verify(true);
     verifyLocalResources(tezConf);
 
     DAGPlan.Builder dagBuilder = DAGPlan.newBuilder();
@@ -897,12 +981,12 @@ public class DAG {
       dagBuilder.addAllLocalResource(DagTypeConverters.convertToDAGPlan(commonTaskLocalFiles));
     }
 
-    Preconditions.checkArgument(topologicalVertexStack.size() == vertices.size(),
-        "size of topologicalVertexStack is:" + topologicalVertexStack.size() +
+    Preconditions.checkArgument(critPathVertexStack.size() == vertices.size(),
+        "size of vertex stack is:" + critPathVertexStack.size() +
         " while size of vertices is:" + vertices.size() +
         ", make sure they are the same in order to sort the vertices");
-    while(!topologicalVertexStack.isEmpty()) {
-      Vertex vertex = vertices.get(topologicalVertexStack.pop());
+    while(!critPathVertexStack.isEmpty()) {
+      Vertex vertex = critPathVertexStack.pop();
       // infer credentials, resources and parallelism from data source
       Resource vertexTaskResource = vertex.getTaskResource();
       if (vertexTaskResource == null) {

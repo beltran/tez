@@ -108,16 +108,8 @@ public class TestDAGPlan {
   @Test(timeout = 5000)
   public void testEdgeManagerSerde() {
     DAG dag = DAG.create("testDag");
-    ProcessorDescriptor pd1 = ProcessorDescriptor.create("processor1")
-        .setUserPayload(UserPayload.create(ByteBuffer.wrap("processor1Bytes".getBytes())));
-    ProcessorDescriptor pd2 = ProcessorDescriptor.create("processor2")
-        .setUserPayload(UserPayload.create(ByteBuffer.wrap("processor2Bytes".getBytes())));
-    Vertex v1 = Vertex.create("v1", pd1, 10, Resource.newInstance(1024, 1));
-    Vertex v2 = Vertex.create("v2", pd2, 1, Resource.newInstance(1024, 1));
-    v1.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
-        .addTaskLocalFiles(new HashMap<String, LocalResource>());
-    v2.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
-        .addTaskLocalFiles(new HashMap<String, LocalResource>());
+    Vertex v1 = createStubbedVertex(1, 10);
+    Vertex v2 = createStubbedVertex(2);
 
     InputDescriptor inputDescriptor = InputDescriptor.create("input")
         .setUserPayload(UserPayload.create(ByteBuffer.wrap("inputBytes".getBytes())));
@@ -145,16 +137,8 @@ public class TestDAGPlan {
   @Test(timeout = 5000)
   public void testUserPayloadSerde() {
     DAG dag = DAG.create("testDag");
-    ProcessorDescriptor pd1 = ProcessorDescriptor.create("processor1").
-        setUserPayload(UserPayload.create(ByteBuffer.wrap("processor1Bytes".getBytes())));
-    ProcessorDescriptor pd2 = ProcessorDescriptor.create("processor2").
-        setUserPayload(UserPayload.create(ByteBuffer.wrap("processor2Bytes".getBytes())));
-    Vertex v1 = Vertex.create("v1", pd1, 10, Resource.newInstance(1024, 1));
-    Vertex v2 = Vertex.create("v2", pd2, 1, Resource.newInstance(1024, 1));
-    v1.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
-        .addTaskLocalFiles(new HashMap<String, LocalResource>());
-    v2.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
-        .addTaskLocalFiles(new HashMap<String, LocalResource>());
+    Vertex v1 = createStubbedVertex(1, 10);
+    Vertex v2 = createStubbedVertex(2);
 
     InputDescriptor inputDescriptor = InputDescriptor.create("input").
         setUserPayload(UserPayload.create(ByteBuffer.wrap("inputBytes".getBytes())));
@@ -206,21 +190,9 @@ public class TestDAGPlan {
   @Test(timeout = 5000)
   public void userVertexOrderingIsMaintained() {
     DAG dag = DAG.create("testDag");
-    ProcessorDescriptor pd1 = ProcessorDescriptor.create("processor1").
-        setUserPayload(UserPayload.create(ByteBuffer.wrap("processor1Bytes".getBytes())));
-    ProcessorDescriptor pd2 = ProcessorDescriptor.create("processor2").
-        setUserPayload(UserPayload.create(ByteBuffer.wrap("processor2Bytes".getBytes())));
-    ProcessorDescriptor pd3 = ProcessorDescriptor.create("processor3").
-        setUserPayload(UserPayload.create(ByteBuffer.wrap("processor3Bytes".getBytes())));
-    Vertex v1 = Vertex.create("v1", pd1, 10, Resource.newInstance(1024, 1));
-    Vertex v2 = Vertex.create("v2", pd2, 1, Resource.newInstance(1024, 1));
-    Vertex v3 = Vertex.create("v3", pd3, 1, Resource.newInstance(1024, 1));
-    v1.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
-        .addTaskLocalFiles(new HashMap<String, LocalResource>());
-    v2.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
-        .addTaskLocalFiles(new HashMap<String, LocalResource>());
-    v3.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
-        .addTaskLocalFiles(new HashMap<String, LocalResource>());
+    Vertex v1 = createStubbedVertex(1, 10);
+    Vertex v2 = createStubbedVertex(2);
+    Vertex v3 = createStubbedVertex(3);
 
     InputDescriptor inputDescriptor = InputDescriptor.create("input").
         setUserPayload(UserPayload.create(ByteBuffer.wrap("inputBytes".getBytes())));
@@ -276,19 +248,88 @@ public class TestDAGPlan {
     assertEquals("output", edgeProperty.getEdgeSource().getClassName());
   }
 
+  @Test
+  public void testCriticalPathOrdering() {
+    DAG dag = DAG.create("testDag");
+    Vertex v1 = createStubbedVertex(1, 10);
+    Vertex v2 = createStubbedVertex(2, 10);
+    Vertex v3 = createStubbedVertex(3);
+    Vertex v4 = createStubbedVertex(4, 10);
+    Vertex v5 = createStubbedVertex(5);
+
+    Vertex v6 = createStubbedVertex(6, 10);
+    Vertex v7 = createStubbedVertex(7);
+
+    InputDescriptor inputDescriptor = InputDescriptor.create("input").
+        setUserPayload(UserPayload.create(ByteBuffer.wrap("inputBytes".getBytes())));
+    OutputDescriptor outputDescriptor = OutputDescriptor.create("output").
+        setUserPayload(UserPayload.create(ByteBuffer.wrap("outputBytes".getBytes())));
+    EdgeProperty edgeProp = EdgeProperty.create(DataMovementType.SCATTER_GATHER,
+        DataSourceType.PERSISTED, SchedulingType.SEQUENTIAL,
+        outputDescriptor, inputDescriptor);
+    Edge v1v3 = Edge.create(v1, v3, edgeProp);
+    Edge v2v5 = Edge.create(v2, v5, edgeProp);
+    Edge v3v4 = Edge.create(v3, v4, edgeProp);
+    Edge v4v5 = Edge.create(v4, v5, edgeProp);
+    Edge v6v7 = Edge.create(v6, v7, edgeProp);
+
+    dag.addVertex(v1).addVertex(v2).addVertex(v3).addVertex(v4).addVertex(v5)
+        .addEdge(v1v3).addEdge(v2v5).addEdge(v3v4).addEdge(v4v5);
+    dag.addVertex(v6).addVertex(v7).addEdge(v6v7);
+
+    DAGPlan dagProto = dag.createDag(new TezConfiguration(), null, null, null, true);
+
+    assertEquals(7, dagProto.getVertexCount());
+    assertEquals(5, dagProto.getEdgeCount());
+
+    // v1 or v6 should be on top because they have children with maxdepth of 1
+    VertexPlan vproto = dagProto.getVertex(0);
+    assertTrue(vproto.getProcessorDescriptor().getClassName().equals("processor1") ||
+        vproto.getProcessorDescriptor().getClassName().equals("processor6"));
+    String payload = new String(vproto.getProcessorDescriptor().getTezUserPayload().getUserPayload().toByteArray());
+    assertTrue(payload.equals("processor1Bytes") || payload.equals("processor6Bytes"));
+    vproto = dagProto.getVertex(1);
+    assertTrue(vproto.getProcessorDescriptor().getClassName().equals("processor1") ||
+        vproto.getProcessorDescriptor().getClassName().equals("processor6"));
+    payload = new String(vproto.getProcessorDescriptor().getTezUserPayload().getUserPayload().toByteArray());
+    assertTrue(payload.equals("processor1Bytes") || payload.equals("processor6Bytes"));
+
+    // v3 and v7 will be the next vertices since they have children with maxdepth of 2
+    vproto = dagProto.getVertex(2);
+    assertTrue(vproto.getProcessorDescriptor().getClassName().equals("processor3") ||
+        vproto.getProcessorDescriptor().getClassName().equals("processor7"));
+    payload = new String(vproto.getProcessorDescriptor().getTezUserPayload().getUserPayload().toByteArray());
+    assertTrue(payload.equals("processor3Bytes") || payload.equals("processor7Bytes"));
+    vproto = dagProto.getVertex(3);
+    assertTrue(vproto.getProcessorDescriptor().getClassName().equals("processor3") ||
+        vproto.getProcessorDescriptor().getClassName().equals("processor7"));
+    payload = new String(vproto.getProcessorDescriptor().getTezUserPayload().getUserPayload().toByteArray());
+    assertTrue(payload.equals("processor3Bytes") || payload.equals("processor7Bytes"));
+
+    // v2 and v4 both have children with maxdepth 3 but v2 should always be next since it has no inputs
+    vproto = dagProto.getVertex(4);
+    assertEquals("processor2", vproto.getProcessorDescriptor().getClassName());
+    payload = new String(vproto.getProcessorDescriptor().getTezUserPayload().getUserPayload().toByteArray());
+    assertEquals("processor2Bytes", payload);
+
+    // v4 is next
+    vproto = dagProto.getVertex(5);
+    assertEquals("processor4", vproto.getProcessorDescriptor().getClassName());
+    payload = new String(vproto.getProcessorDescriptor().getTezUserPayload().getUserPayload().toByteArray());
+    assertEquals("processor4Bytes", payload);
+
+    // and finally v5
+    vproto = dagProto.getVertex(6);
+    assertEquals("processor5", vproto.getProcessorDescriptor().getClassName());
+    payload = new String(vproto.getProcessorDescriptor().getTezUserPayload().getUserPayload().toByteArray());
+    assertEquals("processor5Bytes", payload);
+  }
+
   @Test (timeout=5000)
   public void testCredentialsSerde() {
     DAG dag = DAG.create("testDag");
-    ProcessorDescriptor pd1 = ProcessorDescriptor.create("processor1").
-        setUserPayload(UserPayload.create(ByteBuffer.wrap("processor1Bytes".getBytes())));
-    ProcessorDescriptor pd2 = ProcessorDescriptor.create("processor2").
-        setUserPayload(UserPayload.create(ByteBuffer.wrap("processor2Bytes".getBytes())));
-    Vertex v1 = Vertex.create("v1", pd1, 10, Resource.newInstance(1024, 1));
-    Vertex v2 = Vertex.create("v2", pd2, 1, Resource.newInstance(1024, 1));
-    v1.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
-        .addTaskLocalFiles(new HashMap<String, LocalResource>());
-    v2.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
-        .addTaskLocalFiles(new HashMap<String, LocalResource>());
+    Vertex v1 = createStubbedVertex(1, 10);
+    Vertex v2 = createStubbedVertex(2);
 
     InputDescriptor inputDescriptor = InputDescriptor.create("input").
         setUserPayload(UserPayload.create(ByteBuffer.wrap("inputBytes".getBytes())));
@@ -430,10 +471,6 @@ public class TestDAGPlan {
   @Test(timeout = 5000)
   public void testServiceDescriptorPropagation() {
     DAG dag = DAG.create("testDag");
-    ProcessorDescriptor pd1 = ProcessorDescriptor.create("processor1").
-        setUserPayload(UserPayload.create(ByteBuffer.wrap("processor1Bytes".getBytes())));
-    ProcessorDescriptor pd2 = ProcessorDescriptor.create("processor2").
-        setUserPayload(UserPayload.create(ByteBuffer.wrap("processor2Bytes".getBytes())));
 
     VertexExecutionContext defaultExecutionContext =
         VertexExecutionContext.create("plugin", "plugin", "plugin");
@@ -444,13 +481,8 @@ public class TestDAGPlan {
             new ContainerLauncherDescriptor[]{ContainerLauncherDescriptor.create("plugin", null)},
             new TaskCommunicatorDescriptor[]{TaskCommunicatorDescriptor.create("plugin", null)});
 
-    Vertex v1 = Vertex.create("v1", pd1, 10, Resource.newInstance(1024, 1))
-        .setExecutionContext(v1Context);
-    Vertex v2 = Vertex.create("v2", pd2, 1, Resource.newInstance(1024, 1));
-    v1.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
-        .addTaskLocalFiles(new HashMap<String, LocalResource>());
-    v2.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
-        .addTaskLocalFiles(new HashMap<String, LocalResource>());
+    Vertex v1 = createStubbedVertex(1, 10).setExecutionContext(v1Context);
+    Vertex v2 = createStubbedVertex(2);
 
     InputDescriptor inputDescriptor = InputDescriptor.create("input").
         setUserPayload(UserPayload.create(ByteBuffer.wrap("inputBytes".getBytes())));
@@ -493,9 +525,7 @@ public class TestDAGPlan {
   @Test(timeout = 5000)
   public void testInvalidJavaOpts() {
     DAG dag = DAG.create("testDag");
-    ProcessorDescriptor pd1 = ProcessorDescriptor.create("processor1")
-        .setUserPayload(UserPayload.create(ByteBuffer.wrap("processor1Bytes".getBytes())));
-    Vertex v1 = Vertex.create("v1", pd1, 10, Resource.newInstance(1024, 1));
+    Vertex v1 = createStubbedVertex(1, 10);
     v1.setTaskLaunchCmdOpts(" -XX:+UseG1GC ");
 
     dag.addVertex(v1);
@@ -519,4 +549,17 @@ public class TestDAGPlan {
 
   }
 
+  private Vertex createStubbedVertex(int vertexNum) {
+    return createStubbedVertex(vertexNum, 1);
+  }
+
+  private Vertex createStubbedVertex(int vertexNum, int parallelism) {
+    String processorName = "processor" + vertexNum;
+    ProcessorDescriptor pd = ProcessorDescriptor.create(processorName)
+        .setUserPayload(UserPayload.create(ByteBuffer.wrap((processorName + "Bytes").getBytes())));
+    Vertex v = Vertex.create("v" + vertexNum, pd, parallelism, Resource.newInstance(1024, 1));
+    v.setTaskLaunchCmdOpts("").setTaskEnvironment(new HashMap<String, String>())
+        .addTaskLocalFiles(new HashMap<String, LocalResource>());
+    return v;
+  }
 }

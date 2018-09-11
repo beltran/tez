@@ -687,7 +687,7 @@ public class TezConfiguration extends Configuration {
   @ConfigurationProperty
   public static final String TEZ_AM_YARN_SCHEDULER_CLASS = TEZ_AM_PREFIX + "yarn.scheduler.class";
   public static final String TEZ_AM_YARN_SCHEDULER_CLASS_DEFAULT =
-      "org.apache.tez.dag.app.rm.YarnTaskSchedulerService";
+      "org.apache.tez.dag.app.rm.DagAwareYarnTaskScheduler";
 
   /** Int value. The amount of memory in MB to be used by the AppMaster */
   @ConfigurationScope(Scope.AM)
