@@ -1933,4 +1933,9 @@ public class TezConfiguration extends Configuration {
   public static final String TEZ_SHARED_EXECUTOR_MAX_THREADS = "tez.shared-executor.max-threads";
   public static final int TEZ_SHARED_EXECUTOR_MAX_THREADS_DEFAULT = -1;
 
+
+  @ConfigurationScope(Scope.DAG)
+  public static final String TEZ_VERTEX_PRIORITIES = "tez.vertex.priorities";
+  public static final String TEZ_VERTEX_PRIORITIES_DEFAULT = "";
+
 }
