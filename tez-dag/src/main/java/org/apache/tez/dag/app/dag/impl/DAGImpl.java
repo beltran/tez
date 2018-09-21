@@ -18,6 +18,7 @@
 
 package org.apache.tez.dag.app.dag.impl;
 
+import java.util.PriorityQueue;
 import java.io.IOException;
 import java.net.URL;
 import java.security.PrivilegedExceptionAction;
@@ -178,6 +179,22 @@ public class DAGImpl implements org.apache.tez.dag.app.dag.DAG,
 
   @VisibleForTesting
   DAGScheduler dagScheduler;
+
+  Map<String, VertexImpl> inputReadyWaiting;
+  PriorityQueue<VertexImpl.VertexStartPriority> startOrderQueue;
+  Set<String> startOrderedVertices = new HashSet<>();
+
+  void initStartOrder(String startOrder) {
+    String[] verticesStart = startOrder.split(",");
+    this.startOrderQueue = new PriorityQueue<>(verticesStart.length);
+    this.inputReadyWaiting = new HashMap<>();
+    int i = 0;
+    for(String vertexStart : verticesStart) {
+      this.startOrderedVertices.add(vertexStart);
+      this.startOrderQueue.add(new VertexImpl.VertexStartPriority(vertexStart, i));
+      i++;
+    }
+  }
 
   private final EventHandler eventHandler;
   // TODO Metrics
@@ -563,6 +580,11 @@ public class DAGImpl implements org.apache.tez.dag.app.dag.DAG,
         stateMachineFactory.make(this), this);
     augmentStateMachine();
     this.entityUpdateTracker = new StateChangeNotifier(this);
+    String startOrder = dagConf.get(TezConfiguration.TEZ_VERTEX_START_ORDER, TezConfiguration.TEZ_VERTEX_START_ORDER_DEFAULT);
+    if(!startOrder.equals("")) {
+      LOG.info("Using fixed start order: " + startOrder);
+      initStartOrder(startOrder);
+    }
   }
 
   private void augmentStateMachine() {

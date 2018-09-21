@@ -26,6 +26,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -258,6 +259,19 @@ public class VertexImpl implements org.apache.tez.dag.app.dag.Vertex, EventHandl
 
   final ServicePluginInfo servicePluginInfo;
 
+  static class VertexStartPriority implements Comparable<VertexStartPriority> {
+    String vertexName;
+    int startOrder;
+    VertexStartPriority(String vertexName, int startOrder) {
+      this.vertexName = vertexName;
+      this.startOrder = startOrder;
+    }
+
+    @Override public int compareTo(VertexStartPriority other) {
+      return this.startOrder - other.startOrder;
+    }
+
+  }
 
   private final float maxFailuresPercent;
   private boolean logSuccessDiagnostics = false;
@@ -3012,13 +3026,32 @@ public class VertexImpl implements org.apache.tez.dag.app.dag.Vertex, EventHandl
   }
 
   void startIfPossible() {
+    DAGImpl d = (DAGImpl) dag;
     if (startSignalPending) {
-      // Trigger a start event to ensure route events are seen before
-      // a start event.
-      LOG.info("Triggering start event for vertex: " + logIdentifier +
-          " with distanceFromRoot: " + distanceFromRoot );
-      eventHandler.handle(new VertexEvent(vertexId,
-          VertexEventType.V_START));
+      LOG.info("Checking ordered vertices for: " + getName());
+      if(d.startOrderedVertices.contains(getName())) {
+        d.inputReadyWaiting.put(getName(), this);
+        while(d.startOrderQueue.size() != 0) {
+          VertexStartPriority vertexStartPriority = d.startOrderQueue.peek();
+          LOG.info("Peeked: " + vertexStartPriority);
+          LOG.info("inputReadyWaiting: " + d.inputReadyWaiting);
+          LOG.info("startOrderQueue: " + d.startOrderQueue);
+
+          if(d.inputReadyWaiting.containsKey(vertexStartPriority.vertexName)) {
+            d.startOrderQueue.poll();
+            VertexImpl readyVertex = d.inputReadyWaiting.get(vertexStartPriority.vertexName);
+            LOG.info("Triggering start event for vertex from waiting queue: " + readyVertex.logIdentifier + " with distanceFromRoot: " + readyVertex.distanceFromRoot);
+            eventHandler.handle(new VertexEvent(readyVertex.vertexId, VertexEventType.V_START));
+          } else {
+            break;
+          }
+        }
+      } else {
+        // Trigger a start event to ensure route events are seen before
+        // a start event.
+        LOG.info("Triggering start event for vertex: " + logIdentifier + " with distanceFromRoot: " + distanceFromRoot);
+        eventHandler.handle(new VertexEvent(vertexId, VertexEventType.V_START));
+      }
     }
   }
 
