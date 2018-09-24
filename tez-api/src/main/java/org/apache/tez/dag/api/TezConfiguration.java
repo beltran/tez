@@ -1945,6 +1945,6 @@ public class TezConfiguration extends Configuration {
 
   @ConfigurationScope(Scope.DAG)
   public static final String TEZ_ORDER_TO_APPLY = "tez.order.to.apply";
-  public static final Integer TEZ_ORDER_TO_APPLY_DEFAULT = 1;
+  public static final Integer TEZ_ORDER_TO_APPLY_DEFAULT = 2;
 
 }
