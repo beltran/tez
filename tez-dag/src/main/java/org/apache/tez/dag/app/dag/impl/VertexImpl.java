@@ -3025,25 +3025,76 @@ public class VertexImpl implements org.apache.tez.dag.app.dag.Vertex, EventHandl
     return true;
   }
 
+  void maybePopEvents() {
+    //CAST the dag
+    DAGImpl d = (DAGImpl) dag;
+    if(d.startOrderQueue.peek() == null) {
+      return;
+    }
+    //GET the head of queue
+    VertexStartPriority vertexStartPriority = d.startOrderQueue.peek();
+    //IF vertex is at the head of queue
+    if(vertexStartPriority.vertexName.equals(getName())) {
+      //IF pop if off the queue, because one of its tasks has started
+      d.startOrderQueue.poll();
+      //WHILE the queue is not empty
+      while(d.startOrderQueue.size() != 0) {
+        //GET the head of queue
+        vertexStartPriority = d.startOrderQueue.peek();
+        //IF other head vertex is ready, then it has been waiting for this vertex
+        if(d.inputReadyWaiting.containsKey(vertexStartPriority.vertexName)) {
+          //POP other head vertex 
+          d.startOrderQueue.poll();
+          //GET other head VertexImpl
+          VertexImpl readyVertex = d.inputReadyWaiting.get(vertexStartPriority.vertexName);
+          //SEND it the start event
+          LOG.info("Triggering start event for vertex from waiting queue: " + readyVertex.logIdentifier + " with distanceFromRoot: " + readyVertex.distanceFromRoot);
+          eventHandler.handle(new VertexEvent(readyVertex.vertexId, VertexEventType.V_START));
+        } else {
+          //new head vertex is not ready, will wait for one of its tasks to start
+          break;
+        }
+      }
+    }
+  }
+
   void startIfPossible() {
     DAGImpl d = (DAGImpl) dag;
+    Integer startOrder = getConf().getInt(TezConfiguration.TEZ_ORDER_TO_APPLY, TezConfiguration.TEZ_ORDER_TO_APPLY_DEFAULT);
     if (startSignalPending) {
-      LOG.info("Checking ordered vertices for: " + getName());
-      if(d.startOrderedVertices.contains(getName())) {
-        d.inputReadyWaiting.put(getName(), this);
-        while(d.startOrderQueue.size() != 0) {
-          VertexStartPriority vertexStartPriority = d.startOrderQueue.peek();
-          LOG.info("Peeked: " + vertexStartPriority);
-          LOG.info("inputReadyWaiting: " + d.inputReadyWaiting);
-          LOG.info("startOrderQueue: " + d.startOrderQueue);
+      if (startOrder.equals(1)) {
+        LOG.info("Checking ordered vertices for: " + getName());
+        if (d.startOrderedVertices.contains(getName())) {
+          d.inputReadyWaiting.put(getName(), this);
+          while (d.startOrderQueue.size() != 0) {
+            VertexStartPriority vertexStartPriority = d.startOrderQueue.peek();
+            LOG.info("Peeked: " + vertexStartPriority);
+            LOG.info("inputReadyWaiting: " + d.inputReadyWaiting);
+            LOG.info("startOrderQueue: " + d.startOrderQueue);
 
-          if(d.inputReadyWaiting.containsKey(vertexStartPriority.vertexName)) {
-            d.startOrderQueue.poll();
-            VertexImpl readyVertex = d.inputReadyWaiting.get(vertexStartPriority.vertexName);
-            LOG.info("Triggering start event for vertex from waiting queue: " + readyVertex.logIdentifier + " with distanceFromRoot: " + readyVertex.distanceFromRoot);
-            eventHandler.handle(new VertexEvent(readyVertex.vertexId, VertexEventType.V_START));
-          } else {
-            break;
+            if (d.inputReadyWaiting.containsKey(vertexStartPriority.vertexName)) {
+              d.startOrderQueue.poll();
+              VertexImpl readyVertex = d.inputReadyWaiting.get(vertexStartPriority.vertexName);
+              LOG.info("Triggering start event for vertex from waiting queue: "
+                  + readyVertex.logIdentifier + " with distanceFromRoot: " + readyVertex.distanceFromRoot);
+              eventHandler.handle(new VertexEvent(readyVertex.vertexId,
+                  VertexEventType.V_START));
+            } else {
+              break;
+            }
+          }
+        }
+      } else if (startOrder.equals(2)) {
+        //IF vertex is specified as ordered
+        if (d.startOrderedVertices.contains(getName())) {
+          //IF record this vertex is ready
+          d.inputReadyWaiting.put(getName(), this);
+          //GET the head of queue
+          VertexStartPriority vertexStartPriority = d.startOrderQueue.peek();
+          //IF vertex is at the head of queue, let it start, otherwise skip
+          if (vertexStartPriority.vertexName.equals(getName())) {
+            LOG.info("Triggering start event for vertex: " + logIdentifier + " with distanceFromRoot: " + distanceFromRoot);
+            eventHandler.handle(new VertexEvent(vertexId, VertexEventType.V_START));
           }
         }
       } else {

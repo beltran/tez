@@ -1943,4 +1943,8 @@ public class TezConfiguration extends Configuration {
   public static final String TEZ_VERTEX_PRIORITIES = "tez.vertex.priorities";
   public static final String TEZ_VERTEX_PRIORITIES_DEFAULT = "";
 
+  @ConfigurationScope(Scope.DAG)
+  public static final String TEZ_ORDER_TO_APPLY = "tez.order.to.apply";
+  public static final Integer TEZ_ORDER_TO_APPLY_DEFAULT = 1;
+
 }
