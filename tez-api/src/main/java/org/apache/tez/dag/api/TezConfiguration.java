@@ -1109,6 +1109,11 @@ public class TezConfiguration extends Configuration {
       TEZ_AM_PREFIX + "preemption.percentage";
   public static final int TEZ_AM_PREEMPTION_PERCENTAGE_DEFAULT = 10;
 
+  @ConfigurationScope(Scope.DAG)
+  public static final String TEZ_VERTEX_START_ORDER =
+      "tez.vertex.start.order";
+  public static final String TEZ_VERTEX_START_ORDER_DEFAULT = "";
+
   /**
    * Float value. Specifies the allowable percentage in the range 0.0-100.0f of task
    * failures per vertex that will allow the vertex to succeed with failures.

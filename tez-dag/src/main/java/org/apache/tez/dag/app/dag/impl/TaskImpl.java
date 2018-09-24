@@ -818,6 +818,11 @@ public class TaskImpl implements Task, EventHandler<TaskEvent> {
       writeLock.lock();
       TaskStateInternal oldState = getInternalState();
       try {
+        if(event.getType().equals(TaskEventType.T_ATTEMPT_LAUNCHED)) {
+          VertexImpl v = (VertexImpl) getVertex();
+          DAGImpl d = (DAGImpl) v.getDAG();
+          v.maybePopEvents();
+        }
         stateMachine.doTransition(event.getType(), event);
       } catch (InvalidStateTransitonException e) {
         LOG.error("Can't handle this event" + event.getType()

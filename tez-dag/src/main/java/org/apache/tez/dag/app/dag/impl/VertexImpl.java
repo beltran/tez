@@ -26,6 +26,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -258,6 +259,19 @@ public class VertexImpl implements org.apache.tez.dag.app.dag.Vertex, EventHandl
 
   final ServicePluginInfo servicePluginInfo;
 
+  static class VertexStartPriority implements Comparable<VertexStartPriority> {
+    String vertexName;
+    int startOrder;
+    VertexStartPriority(String vertexName, int startOrder) {
+      this.vertexName = vertexName;
+      this.startOrder = startOrder;
+    }
+
+    @Override public int compareTo(VertexStartPriority other) {
+      return this.startOrder - other.startOrder;
+    }
+
+  }
 
   private final float maxFailuresPercent;
   private boolean logSuccessDiagnostics = false;
@@ -3011,14 +3025,59 @@ public class VertexImpl implements org.apache.tez.dag.app.dag.Vertex, EventHandl
     return true;
   }
 
+  void maybePopEvents() {
+    //CAST the dag
+    DAGImpl d = (DAGImpl) dag;
+    if(d.startOrderQueue.peek() == null) {
+      return;
+    }
+    //GET the head of queue
+    VertexStartPriority vertexStartPriority = d.startOrderQueue.peek();
+    //IF vertex is at the head of queue
+    if(vertexStartPriority.vertexName.equals(getName())) {
+      //IF pop if off the queue, because one of its tasks has started
+      d.startOrderQueue.poll();
+      //WHILE the queue is not empty
+      while(d.startOrderQueue.size() != 0) {
+        //GET the head of queue
+        vertexStartPriority = d.startOrderQueue.peek();
+        //IF other head vertex is ready, then it has been waiting for this vertex
+        if(d.inputReadyWaiting.containsKey(vertexStartPriority.vertexName)) {
+          //POP other head vertex 
+          d.startOrderQueue.poll();
+          //GET other head VertexImpl
+          VertexImpl readyVertex = d.inputReadyWaiting.get(vertexStartPriority.vertexName);
+          //SEND it the start event
+          LOG.info("Triggering start event for vertex from waiting queue: " + readyVertex.logIdentifier + " with distanceFromRoot: " + readyVertex.distanceFromRoot);
+          eventHandler.handle(new VertexEvent(readyVertex.vertexId, VertexEventType.V_START));
+        } else {
+          //new head vertex is not ready, will wait for one of its tasks to start
+          break;
+        }
+      }
+    }
+  }
+
   void startIfPossible() {
+    DAGImpl d = (DAGImpl) dag;
     if (startSignalPending) {
-      // Trigger a start event to ensure route events are seen before
-      // a start event.
-      LOG.info("Triggering start event for vertex: " + logIdentifier +
-          " with distanceFromRoot: " + distanceFromRoot );
-      eventHandler.handle(new VertexEvent(vertexId,
-          VertexEventType.V_START));
+      //IF vertex is specified as ordered
+      if(d.startOrderedVertices.contains(getName())) {
+        //IF record this vertex is ready
+        d.inputReadyWaiting.put(getName(), this);
+        //GET the head of queue
+        VertexStartPriority vertexStartPriority = d.startOrderQueue.peek();
+        //IF vertex is at the head of queue, let it start, otherwise skip
+        if(vertexStartPriority.vertexName.equals(getName())) {
+          LOG.info("Triggering start event for vertex: " + logIdentifier + " with distanceFromRoot: " + distanceFromRoot);
+          eventHandler.handle(new VertexEvent(vertexId, VertexEventType.V_START));
+        }
+      } else {
+        // Trigger a start event to ensure route events are seen before
+        // a start event.
+        LOG.info("Triggering start event for vertex: " + logIdentifier + " with distanceFromRoot: " + distanceFromRoot);
+        eventHandler.handle(new VertexEvent(vertexId, VertexEventType.V_START));
+      }
     }
   }
 
